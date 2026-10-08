@@ -2,31 +2,6 @@
 
 本教程使用服务器 Docker 的既有 visuo_llm Conda 环境。只通过 Git 同步代码；约 6 GB 的方案 B 数据仅在服务器下载，存放于仓库外。下载前应已完成 NSD 协议。代码校验不等于已经下载或运行真实实验。
 
-## 先填写 NSD Data Access Agreement
-
-官方入口：https://naturalscenesdataset.org/ → NSD Data Access Agreement。
-官方表单：https://forms.gle/eT4jHxaWwYUDEf2i9
-
-2026-10-08 只读查看到的实际字段：
-
-| 字段 | 怎么填写 |
-| --- | --- |
-| Email（如果页面要求） | 填能收到邮件的真实邮箱；不要把账号密码发给助手 |
-| Read the Terms and Conditions | 打开条款链接阅读；只有确实同意才自行勾选 |
-| Your name | 真实姓名 |
-| Department | 实际院系/部门，不要编造；无所属时填写真实情况，如 Independent learner / Not affiliated |
-| Institution | 实际学校/机构；无所属则如实填写，不保证该情况一定符合条款 |
-| Are you a student, postdoc, or faculty? | 本科 Undergraduate student；研究生 Graduate student；博士后 Postdoc；教职 Faculty；不属于这些选 Other 并如实说明 |
-| Which data components… | 本教程涉及 Task fMRI data 与 Behavioral data；按你的实际兴趣选择 |
-| Which format will you use? | 本教程使用 Prepared data，不必选 Raw data (BIDS) |
-| Feedback/comments（选填） | 可写：I would like to learn the image-caption-fMRI data processing workflow using a small teaching subset. |
-
-协议条款链接（表单提供）：https://cvnlab.slite.com/api/s/note/9dgh5HCqgZYhMoAESZBS86/Terms-and-Conditions
-
-最后检查并自行 Submit。表单说明完成后会发送含 Data Manual 的邮件；检查垃圾邮件并保存提交后的页面/手册链接。若页面因网络打不开，先检查浏览器访问 Google Forms 的能力；不要为了继续而假装已经同意。无法确认条款是否允许你的身份/用途时，联系数据提供方。
-
-完成后告诉助手“我已完成 NSD 协议，可以下载方案 B”即可，不需要发送邮箱、身份信息或完整表单。
-
 ## 方案 B 的精确定义
 
 - 受试者 subj01，前 6 个 session，fsaverage，GLMdenoise + ridge 的官方 beta。
@@ -57,13 +32,11 @@
 
 - `nsd_data_flow.ipynb`：20 个单元，逐步显示 shape/dtype/数值范围，演示图像、caption、fMRI 与回归检索。数据缺失会明确停止。
 - `download_data.py`：固定样本选择、官方文件下载、断点续传、ETag 检查、SHA-256 校验；无 AWS 账号要求，只依赖 Python 标准库和可用 HTTPS。
-- `download_local.ps1`：本机 Anaconda 的进程级 DLL 路径修复和下载启动器；不改系统 PATH、不安装包。
 - `data_manifest.json`：服务器首次初始化时生成在数据目录中，包含 ID、caption、文件路径、大小、ETag、SHA-256。续传重用同一清单；不要求先从本地生成。日后需要另一个机器使用完全相同数据时，单独同步清单，不重新选择图像。
 - `download_report.json`：下载并完整校验后保存在数据目录，记录代码提交、清单哈希、文件总量和图像数量。
 - 仓库内 `data/`、`models/`、`outputs/`、`cache/` 仅是可选本地路径，均被忽略；服务器实际使用上表的外部路径。
 - `.gitignore`：仅在本教学目录排除大型数据/输出，不改原项目忽略规则。
 - `requirements-core.txt`：图像与 fMRI 教学依赖建议；只是列表，不是已经验证的跨平台环境锁。
-- `ENVIRONMENT_ISSUES.md`：本机启动/HTTPS 问题证据、边界和恢复步骤。
 
 ## 第一步：先在 Docker 中对齐代码
 

@@ -26,8 +26,6 @@ Prefer minimal modifications over broad refactoring.
 
 ---
 
----
-
 ## Git topology
 
 Expected remotes:
@@ -40,45 +38,73 @@ upstream
 → https://github.com/adriendoerig/visuo_llm.git
 ```
 
-The local `<span>main</span>` branch on both the PC and server should normally track:
+Meaning:
+
+```text
+origin
+= user's GitHub fork
+
+upstream
+= original authors' repository
+```
+
+The local `main` branch on both the PC and server should normally track:
 
 ```text
 origin/main
 ```
 
-`<span>upstream/main</span>` is only the reference branch for updates from the original authors.
+`upstream/main` is retained as the original-author reference branch and does not need to be updated unless explicitly requested.
 
-Normal flow:
+Normal relationship:
 
 ```text
 Original authors
-upstream/main
-     ↓
-user reviews/syncs updates when needed
-
-Local PC
-D:\Research\visuo_llm
-     ↓ push
-
-origin/main
+adriendoerig/visuo_llm
+        │
+        │ upstream reference
+        ▼
+User development
+        │
+        │ origin
+        ▼
 weijx-1125/visuo_llm
-     ↓ pull
-
-Server Docker
-/workspace/projects/visuo_llm
 ```
 
+Before important Git operations:
+
+```bash
+git status
+git branch --show-current
+git remote -v
+```
+
+Do not push to `upstream`.
+
+Do not silently discard uncommitted changes.
+
+Do not use destructive Git operations such as:
+
+```bash
+git reset --hard
+git clean -fd
+git push --force
+```
+
+unless explicitly requested.
+
+---
 
 ## Development topology
 
 There are four distinct layers:
 
 ```text
-Local PC
+Local Windows PC
 │
 ├── VS Code
 ├── Codex IDE extension
-└── local visuo_llm Git working copy
+└── D:\Research\visuo_llm
         │
         │ Git
         ▼
@@ -89,26 +115,16 @@ weijx-1125/visuo_llm
         ▼
 Remote server
         │
-        └── Docker container: weijx
+        └── Docker environment
                 │
                 └── /workspace
 ```
 
-These are not assumed to share a live filesystem.
+The local and remote repositories are separate Git working copies.
 
-A modification on the local PC does not automatically appear on the server.
+A local file change does not automatically appear on the server.
 
-Normal source-code synchronization is:
-
-```text
-local edit
-→ git commit
-→ git push origin
-→ GitHub
-→ git pull/fetch on server
-```
-
-Large datasets, checkpoints and experiment outputs should not be synchronized through normal Git commits.
+A server-side file change does not automatically appear locally.
 
 ---
 
@@ -122,47 +138,135 @@ D:\Research\visuo_llm
 
 Primary responsibilities:
 
-* VS Code
-* Codex
-* source-code reading and modification
-* Git diff review
-* commits
-* push to GitHub
+- VS Code
+- Codex
+- source-code reading
+- repository-wide search
+- source-code modification
+- Git diff review
+- commits
+- push to GitHub
 
-Path relationship:
+The local computer does not need to contain the full datasets, model checkpoints, caches, or GPU runtime.
+
+---
+
+## Local-to-server access
+
+The local Windows machine can directly access the remote research environment using:
+
+```text
+ssh weijx-153
+```
+
+Verified SSH behavior:
 
 ```text
 Local:
 D:\Research\visuo_llm
 
-GitHub:
-https://github.com/weijx-1125/visuo_llm
+        │
+        │ ssh weijx-153
+        ▼
 
-Server Docker:
+Remote:
+hostname: weijx
+user: root
+initial directory: /root
+```
+
+The main server workspace is:
+
+```text
+/workspace
+```
+
+The project repository is:
+
+```text
 /workspace/projects/visuo_llm
 ```
 
-These are separate Git working copies. Source-code changes are synchronized through Git, not through a shared filesystem.
+Useful remote commands can be executed directly from the local machine, for example:
 
-## Remote server and Docker
+```bash
+ssh weijx-153 "cd /workspace/projects/visuo_llm && git status"
 
-VS Code connects to the remote machine through SSH.
+ssh weijx-153 "ls -lah /workspace/results"
 
-Known SSH target:
+ssh weijx-153 "nvidia-smi"
 
-```text
-weijx-153
+ssh weijx-153 "cd /workspace/projects/visuo_llm && conda run -n visuo_llm python <script>"
 ```
 
-The research runtime is inside Docker.
+Local Codex may use this existing SSH configuration to inspect and operate the remote environment when appropriate.
 
-Known container state:
+Use SSH primarily for:
+
+- checking remote files
+- inspecting datasets
+- checking GPUs
+- checking environment state
+- running tests
+- running training/evaluation
+- reading logs
+- reading experiment results
+- inspecting checkpoints
+
+---
+
+## Source-code synchronization policy
+
+There are two separate Git working copies:
 
 ```text
-container hostname: weijx
-container user:     root
-workspace root:     /workspace
-repository:         /workspace/projects/visuo_llm
+Local:
+D:\Research\visuo_llm
+
+Remote:
+/workspace/projects/visuo_llm
+```
+
+Preferred ownership model:
+
+```text
+Local repository
+→ primary place for Codex source-code edits
+
+Remote repository
+→ primary place for execution and experiments
+```
+
+Normal source-code flow:
+
+```text
+Local Codex edits
+→ inspect git diff
+→ commit
+→ push origin
+→ GitHub
+→ server pull
+→ execute remotely
+```
+
+Codex may automate remote `git pull`, inspection, testing, and execution through SSH.
+
+Avoid independently editing the same source files in both local and remote working copies unless explicitly required.
+
+Server-side datasets, checkpoints, logs, caches, and experiment results do not need to pass through Git.
+
+---
+
+## Remote server and Docker environment
+
+Known remote environment:
+
+```text
+SSH target:        weijx-153
+hostname:          weijx
+user:              root
+workspace root:    /workspace
+repository:        /workspace/projects/visuo_llm
 ```
 
 A shell such as:
@@ -171,9 +275,9 @@ A shell such as:
 root@weijx:/workspace#
 ```
 
-is inside the intended Docker container.
+is inside the intended research environment.
 
-Useful execution-context checks:
+Useful context checks:
 
 ```bash
 hostname
@@ -182,7 +286,7 @@ pwd
 test -f /.dockerenv && echo "Inside Docker"
 ```
 
-Do not confuse the server host operating system with the Docker runtime.
+Do not confuse the server host operating system with the intended research runtime.
 
 ---
 
@@ -231,44 +335,19 @@ Directory responsibilities:
 → runtime and experiment logs
 
 /workspace/cache
-→ shared caches for Hugging Face, PyTorch, pip, matplotlib, etc.
+→ Hugging Face, PyTorch, pip, matplotlib, and related caches
 
 /workspace/config
 → server/workspace-level configuration
 
 /workspace/scripts
-→ server/workspace utility scripts
+→ server utility scripts
 
 /workspace/tmp
 → temporary files
 ```
 
-Do not move large research artifacts into the Git repository without a clear reason.
-
----
-
-## Path relationship
-
-The same source repository exists in multiple places:
-
-```text
-Local PC
-<local-path>/visuo_llm
-        │
-        │ Git synchronization
-        ▼
-GitHub
-weijx-1125/visuo_llm
-        │
-        │ Git synchronization
-        ▼
-Docker
-/workspace/projects/visuo_llm
-```
-
-The Git repository should contain source code, configuration, scripts and documentation.
-
-Large runtime artifacts belong under `/workspace`, outside the repository whenever practical.
+Do not move large research artifacts into the Git repository unless there is a clear reason.
 
 ---
 
@@ -286,7 +365,7 @@ Conda executable:
 /opt/conda/condabin/conda
 ```
 
-Known Conda environments:
+Known environments:
 
 ```text
 base
@@ -302,22 +381,13 @@ The intended project environment is:
 visuo_llm
 ```
 
-Activate it before project execution:
+Activate before interactive project execution:
 
 ```bash
 conda activate visuo_llm
 ```
 
-Do not assume the environment is automatically active in a fresh shell.
-
-A fresh shell may have:
-
-```text
-CONDA_DEFAULT_ENV=
-python not found in PATH
-```
-
-This is expected until the project environment is activated.
+A fresh shell may have no active Conda environment and may not expose `python` in `PATH`.
 
 After activation:
 
@@ -325,12 +395,18 @@ After activation:
 Python 3.10.21
 ```
 
-Before running project code, verify:
+Before project execution:
 
 ```bash
 conda activate visuo_llm
 which python
 python --version
+```
+
+For one-off remote commands, `conda run` is also appropriate:
+
+```bash
+conda run -n visuo_llm python <script>
 ```
 
 Do not install a separate system Python merely because `python` is unavailable before Conda activation.
@@ -346,35 +422,33 @@ pyproject.toml
 setup.cfg
 ```
 
-The project package is currently installed as an editable package:
+The project package is installed in editable mode:
 
 ```text
 nsd-visuo-semantics
 1.1.dev3+ga60e0eafb
 
 editable source:
- /workspace/projects/visuo_llm
+/workspace/projects/visuo_llm
 ```
 
-Therefore, changes made to the repository source are intended to be directly visible to the active environment without repeatedly reinstalling the package, unless package metadata or dependencies change.
+Therefore source-code changes in the repository are intended to be directly visible to the active environment unless package metadata or dependency definitions change.
 
-Before changing dependency installation, inspect:
+Before changing dependencies, inspect:
 
 ```text
 pyproject.toml
 setup.cfg
-README
+README.md
 ```
 
-and existing environment state.
-
-Do not blindly run global `pip install` or `apt install python`.
+Do not blindly use system-wide package installation.
 
 ---
 
 ## Core Python environment
 
-Known important package versions in `visuo_llm`:
+Known important versions:
 
 ```text
 Python                  3.10.21
@@ -414,15 +488,15 @@ matplotlib              3.10.9
 tensorboard             2.15.2
 ```
 
-Do not upgrade core scientific or ML dependencies casually.
+Do not casually upgrade core scientific or ML dependencies.
 
-Dependency changes can alter experiment behavior and should be treated as reproducibility-affecting changes.
+Dependency changes can affect experiment reproducibility.
 
 ---
 
 ## CUDA and GPUs
 
-Server GPUs:
+Available GPUs:
 
 ```text
 GPU 0: NVIDIA GeForce RTX 4090
@@ -441,40 +515,33 @@ NVIDIA driver:
 580.178.04
 ```
 
-`nvidia-smi` reports host-supported CUDA:
+`nvidia-smi` reports:
 
 ```text
 CUDA 13.0
 ```
 
-The installed PyTorch build is:
+Installed PyTorch build:
 
 ```text
 torch 2.5.1+cu124
 ```
 
-with CUDA 12.4 runtime packages such as:
-
-```text
-nvidia-cuda-runtime-cu12  12.4.127
-nvidia-cublas-cu12        12.4.5.8
-nvidia-cudnn-cu12         9.1.0.70
-nvidia-nccl-cu12          2.21.5
-```
+Relevant CUDA runtime packages are based on CUDA 12.4.
 
 Important distinction:
 
 ```text
 nvidia-smi CUDA 13.0
-→ maximum CUDA compatibility reported by the installed NVIDIA driver
+→ CUDA capability supported by the installed NVIDIA driver
 
 PyTorch +cu124
-→ current PyTorch runtime is built for CUDA 12.4
+→ current PyTorch build uses CUDA 12.4 runtime
 ```
 
-Do not attempt to reinstall PyTorch solely because these two version numbers differ.
+Do not reinstall PyTorch merely because these two version numbers differ.
 
-GPU-heavy execution should happen inside the Docker `visuo_llm` environment.
+GPU-heavy execution should happen remotely.
 
 ---
 
@@ -484,10 +551,8 @@ Before changing packages:
 
 ```bash
 conda activate visuo_llm
-
 which python
 python --version
-
 pip show <package>
 conda list <package>
 ```
@@ -503,39 +568,57 @@ scipy
 scikit-learn
 ```
 
-determine whether the change is required by the repository or experiment.
-
-Avoid casual environment upgrades.
+determine whether the change is actually required.
 
 If dependency changes are necessary:
 
 1. record the previous version;
 2. record the new version;
-3. state why the change is required;
-4. consider its impact on reproducibility;
-5. update project environment documentation when appropriate.
+3. state why the change is needed;
+4. consider reproducibility impact.
 
 ---
 
-## Codex usage
+## Codex execution model
 
-Codex is primarily used on the local PC through the VS Code Codex extension.
+Codex is primarily used on the local Windows PC through the VS Code Codex extension.
 
 Local Codex authentication is functional.
 
-The Codex extension running through the remote SSH environment previously failed authentication because of regional service availability.
+Remote Codex authentication previously failed because of regional service availability.
 
 Therefore use:
 
 ```text
-Local VS Code + Codex
-→ repository analysis and source modification
-
-Remote Docker environment
-→ execution, testing, training, evaluation
+Local Codex
+D:\Research\visuo_llm
+        │
+        ├── read/edit local source code
+        ├── Git operations
+        └── SSH commands
+                ↓
+        ssh weijx-153
+                ↓
+        /workspace
+                ↓
+        datasets / checkpoints / logs / results / GPU runtime
 ```
 
-Do not attempt to bypass regional authentication restrictions on the server.
+Local Codex may directly use SSH to inspect server state and execute approved remote commands.
+
+Do not attempt to bypass regional authentication restrictions on the remote system.
+
+Before remote destructive or expensive actions, inspect the target first.
+
+Do not unintentionally:
+
+- delete datasets
+- delete checkpoints
+- overwrite results
+- modify system-wide environments
+- launch expensive training runs
+
+For long-running GPU experiments, prefer persistent remote execution such as `tmux`.
 
 ---
 
@@ -553,7 +636,7 @@ README / documentation
 → preprocessing
 → model construction
 → forward pass
-→ training/loss
+→ training / loss
 → evaluation
 ```
 
@@ -564,7 +647,7 @@ For important findings, reference concrete:
 - classes
 - configuration values
 
-For model/data code, include tensor shapes when they can be reliably determined.
+For model/data code, include tensor shapes when reliably inferable.
 
 Distinguish repository-defined logic from third-party library behavior.
 
@@ -586,7 +669,7 @@ Then:
 3. make minimal changes;
 4. avoid unrelated refactoring;
 5. inspect the resulting Git diff;
-6. run appropriate validation where possible;
+6. run appropriate validation when possible;
 7. report what was and was not tested.
 
 Substantial research modifications should normally use a dedicated branch.
@@ -685,22 +768,22 @@ push origin
         ↓
 GitHub fork
         ↓
-server pull/fetch
+Codex or user triggers server pull through SSH
         ↓
-conda activate visuo_llm
+conda environment
         ↓
-Docker GPU execution
+remote GPU execution
         ↓
 /workspace/results and /workspace/logs
         ↓
-analyze experiment
+Codex inspects results through SSH
         ↓
 next source-code iteration
 ```
 
 Source code moves through Git.
 
-Datasets, checkpoints, caches and large experiment artifacts remain on the server/workspace storage.
+Datasets, checkpoints, caches, logs, and large experiment artifacts remain on server storage.
 
 ---
 
