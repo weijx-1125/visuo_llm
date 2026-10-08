@@ -1,0 +1,7 @@
+data/
+cache/
+outputs/
+models/
+.ipynb_checkpoints/
+__pycache__/
+*.part

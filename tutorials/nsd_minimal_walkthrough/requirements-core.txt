@@ -1,0 +1,16 @@
+# Suggested teaching dependencies, not a tested environment lock.
+# Reference list only. The server already has a visuo_llm Conda environment:
+# inspect its packages first; do not install this entire list or upgrade blindly.
+numpy
+pandas
+scipy
+Pillow
+matplotlib
+nibabel
+nbformat
+jupyterlab
+ipykernel
+fracridge
+# Optional, install only for the stages you enable:
+# sentence-transformers
+# tensorflow
