@@ -7,6 +7,7 @@ import os
 import pickle
 import re
 import shutil
+import ssl
 import subprocess
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ BASE = 'https://natural-scenes-dataset.s3.us-east-2.amazonaws.com/'
 DEFAULT_DATA_DIR = Path('/workspace/datasets/nsd_teaching_b') if os.name != 'nt' else HERE / 'data'
 DATA_DIR = Path(os.environ.get('NSD_TEACHING_DATA_DIR', str(DEFAULT_DATA_DIR))).expanduser()
 MANIFEST = DATA_DIR / 'data_manifest.json'
+TLS_CONTEXT = None
 CAPTIONS = ROOT / 'src/nsd_visuo_semantics/get_embeddings/ms_coco_nsd_captions_test.pkl'
 
 
@@ -37,7 +39,7 @@ def digest(path, algorithm='sha256'):
 def request(url, headers=None, method=None):
     for attempt in range(5):
         try:
-            return urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}, method=method), timeout=30)
+            return urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}, method=method), timeout=30, context=TLS_CONTEXT)
         except urllib.error.HTTPError as error:
             if error.code not in (408, 429, 500, 502, 503, 504) or attempt == 4:
                 raise
@@ -197,7 +199,7 @@ def initialize(sessions, max_images, workers=4):
 
 
 def main():
-    global DATA_DIR, MANIFEST
+    global DATA_DIR, MANIFEST, TLS_CONTEXT
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--data-dir', type=Path, default=DATA_DIR, help='Data root; Docker default: /workspace/datasets/nsd_teaching_b')
     p.add_argument('--manifest', type=Path, help='Optional pinned manifest; default: DATA_DIR/data_manifest.json')
@@ -205,10 +207,14 @@ def main():
     p.add_argument('--sessions', type=int, default=6, choices=range(1, 7))
     p.add_argument('--max-images', type=int, default=200)
     p.add_argument('--workers', type=int, default=4, choices=range(1, 9), help='Concurrent file transfers/metadata queries, 1-8; does not change selected data')
+    p.add_argument('--tls12', action='store_true', help='TLS 1.2 compatibility mode; retains certificate/hostname verification')
     p.add_argument('--download', action='store_true')
     p.add_argument('--verify', action='store_true')
     p.add_argument('--agreement-confirmed', action='store_true', help='Use only after personally completing NSD access agreement')
     args = p.parse_args()
+    TLS_CONTEXT = ssl.create_default_context() if args.tls12 else None
+    if TLS_CONTEXT is not None:
+        TLS_CONTEXT.maximum_version = ssl.TLSVersion.TLSv1_2
     DATA_DIR = args.data_dir.expanduser().resolve()
     MANIFEST = args.manifest.expanduser().resolve() if args.manifest else DATA_DIR / 'data_manifest.json'
     if (args.init or args.download) and not args.agreement_confirmed:

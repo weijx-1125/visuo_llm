@@ -74,6 +74,8 @@ python tutorials/nsd_minimal_walkthrough/download_data.py --init --download --ve
 
 官方桶位于 AWS us-east-2，脚本使用该区域的官方 S3 端点；请求有超时重试，默认同时传输 4 个文件。可用 `--workers 1` 降低并发，或 `--workers 8` 提高并发；只影响传输，不改变样本、预处理或实验参数。跨境网络速度可能较慢，建议在 tmux 中执行并把日志放 /workspace/logs/nsd_teaching_b。
 
+本服务器默认 TLS 协商曾间歇超时；只读对照测试中 TLS 1.2 更稳定，可在下载命令后添加 `--tls12`。此兼容模式仍验证证书与主机名，没有关闭 HTTPS 安全校验；不修改系统 OpenSSL、Conda 包或数据内容。
+
 如果已经有清单（包括下载中断之后），**不要再次 --init**，使用以下续传命令：
 
 ```bash
