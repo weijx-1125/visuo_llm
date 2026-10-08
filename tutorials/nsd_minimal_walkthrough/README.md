@@ -72,6 +72,8 @@ python tutorials/nsd_minimal_walkthrough/download_data.py --init --download --ve
 
 首次初始化只先下载约 2.74 MB 的 behavior，用于选图，再查询元数据生成固定清单。正式下载约 6 GB，脚本会检查剩余空间（额外保留 1 GiB），每个大文件传输期间打印进度；建议事先预留至少 10 GB。不安装包，不下载模型，不运行训练。
 
+官方桶位于 AWS us-east-2，脚本使用该区域的官方 S3 端点；请求有超时重试，默认同时传输 4 个文件。可用 `--workers 1` 降低并发，或 `--workers 8` 提高并发；只影响传输，不改变样本、预处理或实验参数。跨境网络速度可能较慢，建议在 tmux 中执行并把日志放 /workspace/logs/nsd_teaching_b。
+
 如果已经有清单（包括下载中断之后），**不要再次 --init**，使用以下续传命令：
 
 ```bash

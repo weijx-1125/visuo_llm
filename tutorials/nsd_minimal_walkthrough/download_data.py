@@ -11,13 +11,15 @@ import subprocess
 import time
 from pathlib import Path
 import urllib.parse
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-BASE = 'https://natural-scenes-dataset.s3.amazonaws.com/'
+BASE = 'https://natural-scenes-dataset.s3.us-east-2.amazonaws.com/'
 DEFAULT_DATA_DIR = Path('/workspace/datasets/nsd_teaching_b') if os.name != 'nt' else HERE / 'data'
 DATA_DIR = Path(os.environ.get('NSD_TEACHING_DATA_DIR', str(DEFAULT_DATA_DIR))).expanduser()
 MANIFEST = DATA_DIR / 'data_manifest.json'
@@ -32,19 +34,30 @@ def digest(path, algorithm='sha256'):
     return h.hexdigest()
 
 
-def request(url, headers=None):
-    return urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}), timeout=120)
+def request(url, headers=None, method=None):
+    for attempt in range(5):
+        try:
+            return urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}, method=method), timeout=30)
+        except urllib.error.HTTPError as error:
+            if error.code not in (408, 429, 500, 502, 503, 504) or attempt == 4:
+                raise
+            print(f'HTTP retry {attempt + 1}/4: {error.code} {url}', flush=True)
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if attempt == 4:
+                raise
+            print(f'Network retry {attempt + 1}/4: {type(error).__name__} {url}', flush=True)
+        time.sleep(min(2 ** attempt, 16))
 
 
 def metadata(key):
-    with urllib.request.urlopen(urllib.request.Request(BASE + key, method='HEAD'), timeout=120) as r:
+    with request(BASE + key, method='HEAD') as r:
         item = {'key': key, 'size': int(r.headers['Content-Length']),
                 'etag': r.headers['ETag'].strip('"')}
     if re.fullmatch(r'[0-9a-f]{32}-\d+', item['etag']):
         parts = int(item['etag'].split('-')[1])
         sizes = []
         for part in range(1, parts + 1):
-            with urllib.request.urlopen(urllib.request.Request(BASE + key + f'?partNumber={part}', method='HEAD'), timeout=120) as r:
+            with request(BASE + key + f'?partNumber={part}', method='HEAD') as r:
                 sizes.append(int(r.headers['Content-Length']))
         if sum(sizes) != item['size']:
             raise RuntimeError('Server did not expose valid multipart sizes: ' + key)
@@ -125,7 +138,7 @@ def download(item):
                     with part.open('ab' if append else 'wb') as f:
                         last_progress = time.monotonic()
                         while True:
-                            chunk = r.read(4 * 1024 * 1024)
+                            chunk = r.read(256 * 1024)
                             if not chunk:
                                 break
                             f.write(chunk)
@@ -143,7 +156,7 @@ def download(item):
             time.sleep(min(2 ** attempt, 16))
 
 
-def initialize(sessions, max_images):
+def initialize(sessions, max_images, workers=4):
     if MANIFEST.exists():
         raise RuntimeError('Manifest exists. Use --download/--verify; do not silently change the sample.')
     behavior = metadata('nsddata/ppdata/subj01/behav/responses.tsv')
@@ -169,8 +182,11 @@ def initialize(sessions, max_images):
         raise RuntimeError('Unexpected repository caption table length')
     selected = [{'nsd_id': i, 'caption_index': i - 1, 'trial_count': counts[i],
                  'image_key': obj['key'], 'captions': captions[i - 1]} for i, obj in chosen]
-    betas = [metadata(f'nsddata_betas/ppdata/subj01/fsaverage/betas_fithrf_GLMdenoise_RR/{h}.betas_session{s:02d}.mgh')
-             for s in range(1, sessions + 1) for h in ('lh', 'rh')]
+    beta_keys = [f'nsddata_betas/ppdata/subj01/fsaverage/betas_fithrf_GLMdenoise_RR/{h}.betas_session{s:02d}.mgh'
+                 for s in range(1, sessions + 1) for h in ('lh', 'rh')]
+    print('Resolving beta file metadata...', flush=True)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        betas = list(pool.map(metadata, beta_keys))
     manifest = {'schema': 1, 'subject': 'subj01', 'sessions': list(range(1, sessions + 1)),
                 'selection': 'shared1000 intersect observed trials; highest repeat count then ID; sorted by ID',
                 'max_images': max_images, 'caption_source': str(CAPTIONS.relative_to(ROOT)).replace('\\', '/'),
@@ -188,6 +204,7 @@ def main():
     p.add_argument('--init', action='store_true', help='Create fixed manifest; downloads behavior metadata first')
     p.add_argument('--sessions', type=int, default=6, choices=range(1, 7))
     p.add_argument('--max-images', type=int, default=200)
+    p.add_argument('--workers', type=int, default=4, choices=range(1, 9), help='Concurrent file transfers/metadata queries, 1-8; does not change selected data')
     p.add_argument('--download', action='store_true')
     p.add_argument('--verify', action='store_true')
     p.add_argument('--agreement-confirmed', action='store_true', help='Use only after personally completing NSD access agreement')
@@ -205,7 +222,7 @@ def main():
         MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     print('Data directory:', DATA_DIR, flush=True)
     print('Manifest:', MANIFEST, flush=True)
-    m = initialize(args.sessions, args.max_images) if args.init else json.loads(MANIFEST.read_text(encoding='utf-8'))
+    m = initialize(args.sessions, args.max_images, args.workers) if args.init else json.loads(MANIFEST.read_text(encoding='utf-8'))
     if digest(CAPTIONS) != m['caption_source_sha256']:
         raise RuntimeError('Caption source differs from pinned manifest')
     total = sum(x['size'] for x in m['files'])
@@ -220,11 +237,12 @@ def main():
         free = shutil.disk_usage(DATA_DIR).free
         if free < needed + 1024 ** 3:
             raise RuntimeError(f'Not enough free space: {free:,} bytes free; need {needed:,} bytes plus 1 GiB reserve.')
-        for item in m['files']:
-            path = download(item)
-            if not item.get('sha256'):
-                item['sha256'] = digest(path)
-                MANIFEST.write_text(json.dumps(m, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        # Worker threads transfer separate files; only this thread edits the manifest.
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            for item, path in zip(m['files'], pool.map(download, m['files'])):
+                if not item.get('sha256'):
+                    item['sha256'] = digest(path)
+                    MANIFEST.write_text(json.dumps(m, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     if args.verify:
         failed = [x['key'] for x in m['files'] if not verify(DATA_DIR / x['key'], x)]
         if failed:
